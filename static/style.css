@@ -32,3 +32,8 @@ h1 { color:var(--navy); }
 .auth label { display:flex; flex-direction:column; font-weight:600; margin-top:.6rem; }
 .auth input { padding:.55rem .7rem; border:1px solid var(--line); border-radius:8px; font-size:1rem; }
 .auth button { margin-top:1rem; }
+/* logout is a POST form styled like a nav link */
+.nav nav { display:flex; align-items:center; flex-wrap:wrap; }
+.nav .logout { display:inline; margin:0 0 0 1rem; }
+.nav .link-btn { background:none; border:0; padding:0; color:#dbe6ff; font:inherit; cursor:pointer; }
+.nav .link-btn:hover { color:#fff; text-decoration:underline; }

@@ -3,18 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}My Project{% endblock %}</title>
+  <!-- CSRF token for JavaScript fetch() POSTs later (sent as X-CSRFToken) -->
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{% block title %}WanderWise{% endblock %} · WanderWise</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <header class="nav">
-    <a class="brand" href="{{ url_for('home') }}">My Project</a>
+    <a class="brand" href="{{ url_for('home') }}">WanderWise</a>
     <nav>
       <a href="{{ url_for('home') }}">Home</a>
       {% if current_user %}
         <a href="{{ url_for('favorites') }}">My Favorites</a>
         <span class="who">{{ current_user.email }}</span>
-        <a href="{{ url_for('logout') }}">Log out</a>
+        <!-- Logout changes state, so it is a POST form with a CSRF token, not a link -->
+        <form class="logout" method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="link-btn">Log out</button>
+        </form>
       {% else %}
         <a href="{{ url_for('login') }}">Log in</a>
         <a href="{{ url_for('signup') }}">Sign up</a>
@@ -23,7 +29,7 @@
   </header>
   <main class="container">
     {% with messages = get_flashed_messages() %}
-      {% if messages %}<div class="flash">{% for m in messages %}<p>{{ m }}</p>{% endfor %}</div>{% endif %}
+      {% if messages %}<div class="flash" role="status">{% for m in messages %}<p>{{ m }}</p>{% endfor %}</div>{% endif %}
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
