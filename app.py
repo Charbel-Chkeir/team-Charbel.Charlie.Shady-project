@@ -19,7 +19,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from models import db, User, Favorite
 import api_client
-from validators import validate_signup, validate_login
+from validators import validate_signup, validate_login, validate_place
 
 app = Flask(__name__)
 
@@ -86,7 +86,7 @@ def inject_globals():
     """Make the logged-in user (and their favorite ids) available in templates."""
     favorite_ids = set()
     if g.user:
-        favorite_ids = {f.item_id for f in g.user.favorites}
+        favorite_ids = {f.place_xid for f in g.user.favorites}
     return {"current_user": g.user, "favorite_ids": favorite_ids}
 
 
@@ -223,39 +223,46 @@ def logout():
 @app.route("/favorites")
 @login_required
 def favorites():
-    items = Favorite.query.filter_by(user_id=g.user.id).all()
+    items = (Favorite.query.filter_by(user_id=g.user.id)
+             .order_by(Favorite.created_at.desc())      # newest first
+             .all())
     return render_template("favorites.html", favorites=items)
 
 
 @app.route("/favorites/add", methods=["POST"])
 @login_required
 def favorites_add():
-    item_id = request.form.get("item_id", "").strip()
-    if item_id:
-        exists = Favorite.query.filter_by(
-            user_id=g.user.id, item_id=item_id).first()
-        if exists:
-            flash("Already in your favorites.")
-        else:
-            db.session.add(Favorite(
-                user_id=g.user.id, item_id=item_id,
-                item_title=request.form.get("item_title", ""),
-                item_image=request.form.get("item_image", "")))
-            db.session.commit()
-            flash("Saved to favorites.")
+    errors, place = validate_place(request.form)
+    if errors:
+        flash("Could not save this place: " + " ".join(errors.values()))
+        return redirect(safe_next("favorites"))
+
+    try:
+        db.session.add(Favorite(user_id=g.user.id,
+                                place_xid=place["place_xid"],
+                                place_name=place["place_name"],
+                                place_image=place["place_image"]))
+        db.session.commit()
+        flash(f"Saved \"{place['place_name']}\" to favorites.")
+    except IntegrityError:
+        # UNIQUE (user_id, place_xid) -> it is already saved.
+        db.session.rollback()
+        flash("Already in your favorites.")
     return redirect(safe_next("favorites"))
 
 
 @app.route("/favorites/remove", methods=["POST"])
 @login_required
 def favorites_remove():
-    item_id = request.form.get("item_id", "").strip()
-    fav = Favorite.query.filter_by(
-        user_id=g.user.id, item_id=item_id).first()
+    xid = request.form.get("place_xid", "").strip()
+    # Filtering by user_id too = ownership check: you can only remove YOUR rows.
+    fav = Favorite.query.filter_by(user_id=g.user.id, place_xid=xid).first()
     if fav:
         db.session.delete(fav)
         db.session.commit()
         flash("Removed from favorites.")
+    else:
+        flash("That place is not in your favorites.")
     return redirect(safe_next("favorites"))
 
 
