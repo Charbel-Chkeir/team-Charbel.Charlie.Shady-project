@@ -1,17 +1,20 @@
 """
-<YOUR PROJECT NAME> -- a Flask web app (team project starter).
+WanderWise -- travel guide & trip planner (GIN446 team project).
 
-Content comes from an external API (see api_client.py). The only data stored
-is user accounts and their favorites (see models.py). Authentication is
+Content comes from external APIs (see api_client.py). The only data stored is
+user accounts and their saved data (see models.py). Authentication is
 email + password with Flask sessions.
 
 Run locally:   flask run --debug    ->   http://127.0.0.1:5000
 """
 import os
+from datetime import timedelta
 from functools import wraps
 
 from flask import (Flask, render_template, request, redirect, url_for,
-                   session, flash, abort)
+                   session, flash, abort, g)
+from flask_wtf.csrf import CSRFProtect, CSRFError
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from models import db, User, Favorite
@@ -19,7 +22,27 @@ import api_client
 from validators import validate_signup, validate_login
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")
+
+# ---------- configuration ------------------------------------------
+# Render sets the RENDER environment variable on every service, so we use it
+# to know whether we are live (HTTPS) or on a laptop (plain HTTP).
+ON_RENDER = "RENDER" in os.environ
+
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    if ON_RENDER:
+        # Never run in production with a guessable key: anyone could forge a
+        # session cookie and log in as any user.
+        raise RuntimeError("SECRET_KEY environment variable is not set.")
+    SECRET_KEY = "dev-only-change-me"
+
+app.config.update(
+    SECRET_KEY=SECRET_KEY,                 # signs the session cookie + CSRF tokens
+    SESSION_COOKIE_HTTPONLY=True,          # JavaScript cannot read the cookie
+    SESSION_COOKIE_SAMESITE="Lax",         # not sent on cross-site POSTs
+    SESSION_COOKIE_SECURE=ON_RENDER,       # HTTPS only when live (local is HTTP)
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=2),  # auto-logout after 2h idle
+)
 
 
 def database_uri():
@@ -40,27 +63,61 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
+# CSRF protection: every POST must carry a valid csrf_token (see templates).
+csrf = CSRFProtect(app)
+
+
+# ---------- current user & helpers ---------------------------------
+@app.before_request
+def load_current_user():
+    """Runs before every request: put the logged-in user (or None) in g.user."""
+    g.user = None
+    user_id = session.get("user_id")
+    if user_id is not None:
+        user = db.session.get(User, user_id)
+        if user is None:          # account was deleted -> drop the stale session
+            session.clear()
+        else:
+            g.user = user
+
 
 @app.context_processor
 def inject_globals():
     """Make the logged-in user (and their favorite ids) available in templates."""
-    user = None
     favorite_ids = set()
-    if "user_id" in session:
-        user = User.query.get(session["user_id"])
-        if user:
-            favorite_ids = {f.item_id for f in user.favorites}
-    return {"current_user": user, "favorite_ids": favorite_ids}
+    if g.user:
+        favorite_ids = {f.item_id for f in g.user.favorites}
+    return {"current_user": g.user, "favorite_ids": favorite_ids}
 
 
 def login_required(view):
+    """Decorator: send visitors to the login page, then back where they were."""
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if "user_id" not in session:
+        if g.user is None:
             flash("Please log in first.")
-            return redirect(url_for("login"))
+            return redirect(url_for("login", next=request.path))
         return view(*args, **kwargs)
     return wrapped
+
+
+def safe_next(default_endpoint):
+    """Return the 'next' URL only if it is a path on OUR site.
+
+    Without this check, a link like /login?next=https://evil.com would send
+    the user to another website after logging in (an "open redirect").
+    """
+    target = request.values.get("next", "")
+    if target.startswith("/") and not target.startswith("//"):
+        return target
+    return url_for(default_endpoint)
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    """Missing/expired CSRF token: show a friendly message instead of a raw 400."""
+    flash("Your form expired. Please try again.")
+    return redirect(request.referrer or url_for("home"))
 
 
 # ---------- content (from your API) --------------------------------
@@ -85,41 +142,80 @@ def item(item_id):
 
 
 # ===================================================================
-# AUTHENTICATION  --  YOU BUILD THIS (sign-up, log-in, log-out, sessions)
+# AUTHENTICATION  (sign-up, log-in, log-out, sessions)
 # ===================================================================
-# This is YOUR work. The routes below are stubs. Implement them using what
-# you learned in the "Sessions & Login" slides. Tools already imported for
-# you at the top: generate_password_hash, check_password_hash, session,
-# and the validators validate_signup / validate_login.
-#
-# What each route should do:
-#   signup (POST): validate the form; reject an email that already exists;
-#                  hash the password; create the User; store session["user_id"];
-#                  redirect home.
-#   login  (POST): validate; find the user by email; check_password_hash;
-#                  on success store session["user_id"]; else show an error.
-#   logout        : session.clear(); redirect home.
-# A worked version of favorites below shows how session["user_id"] is used.
-
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
+    if g.user:                                   # already logged in
+        return redirect(url_for("home"))
+
     if request.method == "POST":
-        # TODO: implement sign-up (see the Sessions & Login slides).
-        pass
+        errors, email = validate_signup(request.form)
+
+        # Reject an email that is already registered.
+        if not errors and User.query.filter_by(email=email).first():
+            errors["email"] = "An account with this email already exists."
+
+        if errors:
+            # Re-show the form with the messages; keep the email, never the password.
+            return render_template("signup.html", errors=errors,
+                                   data={"email": email}), 400
+
+        user = User(email=email,
+                    password_hash=generate_password_hash(request.form["password"]))
+        try:
+            db.session.add(user)
+            db.session.commit()
+        except IntegrityError:
+            # Two sign-ups with the same email at the same moment: the UNIQUE
+            # constraint on User.email catches it. Undo and report it.
+            db.session.rollback()
+            errors["email"] = "An account with this email already exists."
+            return render_template("signup.html", errors=errors,
+                                   data={"email": email}), 400
+
+        session.clear()                          # start a fresh session
+        session["user_id"] = user.id
+        session.permanent = True                 # use PERMANENT_SESSION_LIFETIME
+        flash("Welcome to WanderWise! Your account was created.")
+        return redirect(url_for("home"))
+
     return render_template("signup.html", errors={}, data={})
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    if g.user:
+        return redirect(url_for("home"))
+
     if request.method == "POST":
-        # TODO: implement log-in (see the Sessions & Login slides).
-        pass
+        errors, email = validate_login(request.form)
+        if errors:
+            return render_template("login.html", errors=errors,
+                                   data={"email": email}), 400
+
+        user = User.query.filter_by(email=email).first()
+        # Same message whether the email is unknown or the password is wrong,
+        # so an attacker cannot learn which emails have accounts.
+        if user is None or not check_password_hash(user.password_hash,
+                                                   request.form["password"]):
+            return render_template(
+                "login.html", data={"email": email},
+                errors={"form": "Email or password is incorrect."}), 401
+
+        session.clear()                          # prevents session fixation
+        session["user_id"] = user.id
+        session.permanent = True
+        flash("Logged in successfully.")
+        return redirect(safe_next("home"))
+
     return render_template("login.html", errors={}, data={})
 
 
-@app.route("/logout")
+@app.route("/logout", methods=["POST"])          # POST + CSRF token (Week 9)
 def logout():
-    # TODO: end the session (hint: session.clear()), then redirect home.
+    session.clear()
+    flash("You have been logged out.")
     return redirect(url_for("home"))
 
 
@@ -127,7 +223,7 @@ def logout():
 @app.route("/favorites")
 @login_required
 def favorites():
-    items = Favorite.query.filter_by(user_id=session["user_id"]).all()
+    items = Favorite.query.filter_by(user_id=g.user.id).all()
     return render_template("favorites.html", favorites=items)
 
 
@@ -137,17 +233,17 @@ def favorites_add():
     item_id = request.form.get("item_id", "").strip()
     if item_id:
         exists = Favorite.query.filter_by(
-            user_id=session["user_id"], item_id=item_id).first()
+            user_id=g.user.id, item_id=item_id).first()
         if exists:
             flash("Already in your favorites.")
         else:
             db.session.add(Favorite(
-                user_id=session["user_id"], item_id=item_id,
+                user_id=g.user.id, item_id=item_id,
                 item_title=request.form.get("item_title", ""),
                 item_image=request.form.get("item_image", "")))
             db.session.commit()
             flash("Saved to favorites.")
-    return redirect(request.form.get("next") or url_for("favorites"))
+    return redirect(safe_next("favorites"))
 
 
 @app.route("/favorites/remove", methods=["POST"])
@@ -155,12 +251,12 @@ def favorites_add():
 def favorites_remove():
     item_id = request.form.get("item_id", "").strip()
     fav = Favorite.query.filter_by(
-        user_id=session["user_id"], item_id=item_id).first()
+        user_id=g.user.id, item_id=item_id).first()
     if fav:
         db.session.delete(fav)
         db.session.commit()
         flash("Removed from favorites.")
-    return redirect(request.form.get("next") or url_for("favorites"))
+    return redirect(safe_next("favorites"))
 
 
 if __name__ == "__main__":
