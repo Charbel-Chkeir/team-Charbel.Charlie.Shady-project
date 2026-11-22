@@ -57,3 +57,35 @@ def validate_login(form):
     if password == "":
         errors["password"] = "Password is required."
     return errors, email
+
+
+# ---------- places (favorites, and trip items later) ---------------
+# OpenTripMap xids are letters/digits, e.g. "N2451418410", "W123456", "Q90".
+XID = re.compile(r"^[A-Za-z0-9]{1,50}$")
+HTTPS_URL = re.compile(r"^https://[^\s\"'<>]{1,490}$")
+PLACE_NAME_MAX = 255
+
+
+def validate_place(form):
+    """Check the place fields sent by a 'Save' form (hidden inputs).
+
+    Hidden inputs are NOT safe: anyone can change them with DevTools or curl,
+    so every value is checked here before it reaches the database.
+    """
+    errors = {}
+    xid = form.get("place_xid", "").strip()
+    name = form.get("place_name", "").strip()
+    image = form.get("place_image", "").strip()
+
+    if not XID.match(xid):
+        errors["place_xid"] = "Invalid place id."
+
+    if name == "":
+        errors["place_name"] = "Place name is missing."
+    elif len(name) > PLACE_NAME_MAX:
+        name = name[:PLACE_NAME_MAX]          # very long API names: shorten
+
+    if image != "" and not HTTPS_URL.match(image):
+        image = ""                            # bad image URL: just drop it
+
+    return errors, {"place_xid": xid, "place_name": name, "place_image": image}
