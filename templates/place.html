@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "_macros.html" import place_image %}
+{% block title %}{{ place.name }}{% endblock %}
+{% block content %}
+<article class="place">
+  <a class="hint" href="{{ back_url() }}">← Back</a>
+  <h1>{{ place.name }}</h1>
+  {% if place.kinds %}
+    <p class="tags">{% for k in place.kinds %}<span class="tag">{{ k }}</span>{% endfor %}</p>
+  {% endif %}
+
+  <div class="place-layout">
+    {{ place_image(place.image, place.name, "hero") }}
+
+    <div class="place-info">
+      <!-- <bdi>: the address can be Arabic (right-to-left) or English; bdi keeps
+           its words in the right order without flipping the whole line -->
+      {% if place.address %}<p class="address">📍 <bdi>{{ place.address }}</bdi></p>{% endif %}
+
+      <!-- Save / remove favorite (login required) -->
+      {% if current_user %}
+        {% if place.xid in favorite_ids %}
+          <form method="post" action="{{ url_for('favorites_remove') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="place_xid" value="{{ place.xid }}">
+            <input type="hidden" name="next" value="{{ request.path }}">
+            <button class="btn remove">♥ Remove from favorites</button>
+          </form>
+        {% else %}
+          <form method="post" action="{{ url_for('favorites_add') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="place_xid" value="{{ place.xid }}">
+            <input type="hidden" name="place_name" value="{{ place.name }}">
+            <input type="hidden" name="place_image" value="{{ place.image or '' }}">
+            <input type="hidden" name="next" value="{{ request.path }}">
+            <button class="btn save">♡ Save to favorites</button>
+          </form>
+        {% endif %}
+      {% else %}
+        <p><a href="{{ url_for('login', next=request.path) }}">Log in</a> to save this place or add it to a trip.</p>
+      {% endif %}
+
+      <ul class="links">
+        <li><a href="{{ url_for('weather', lat=place.lat, lon=place.lon, name=place.name) }}">☀️ Weather forecast here</a></li>
+        {% if place.wikipedia %}
+          <li><a href="{{ place.wikipedia }}" target="_blank" rel="noopener noreferrer">📖 Wikipedia</a></li>
+        {% endif %}
+        {% if place.website %}
+          <li><a href="{{ place.website }}" target="_blank" rel="noopener noreferrer">🌐 Official website</a></li>
+        {% endif %}
+        <li><a href="https://www.openstreetmap.org/?mlat={{ place.lat }}&mlon={{ place.lon }}#map=17/{{ place.lat }}/{{ place.lon }}"
+               target="_blank" rel="noopener noreferrer">🗺️ Open in OpenStreetMap</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>About</h2>
+  {% if place.description %}
+    <p class="description" dir="auto">{{ place.description }}</p>
+  {% else %}
+    <p class="hint">No description is available for this place.</p>
+  {% endif %}
+</article>
+{% endblock %}

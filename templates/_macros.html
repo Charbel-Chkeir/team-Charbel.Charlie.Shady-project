@@ -27,3 +27,22 @@
   </div>
 </div>
 {% endmacro %}
+
+
+{#
+  weather_days: one small box per day from api_client.get_forecast().
+  Used on the results page (strip) and on the weather page.
+#}
+{% macro weather_days(forecast) %}
+<ul class="weather-days">
+  {% for d in forecast %}
+    <li class="weather-day" title="{{ d.label }}">
+      <span class="wd-day">{{ "Today" if loop.first else d.day }}</span>
+      <span class="wd-icon" aria-hidden="true">{{ d.icon }}</span>
+      <span class="wd-temp"><strong>{{ d.t_max }}°</strong> / {{ d.t_min }}°</span>
+      <span class="wd-rain">{% if d.rain is not none %}💧 {{ d.rain }}%{% else %}&nbsp;{% endif %}</span>
+      <span class="visually-hidden">{{ d.label }}</span>
+    </li>
+  {% endfor %}
+</ul>
+{% endmacro %}

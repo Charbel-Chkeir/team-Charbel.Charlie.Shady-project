@@ -1,17 +1,66 @@
 {% extends "base.html" %}
-{% block title %}Results{% endblock %}
+{% from "_macros.html" import weather_days %}
+{% block title %}Things to do in {{ city.name }}{% endblock %}
 {% block content %}
-<h1>Results{% if query %} for "{{ query }}"{% endif %}</h1>
-{% if items %}
+<header class="results-head">
+  <h1>Things to do in {{ city.name }}{% if city.country %} <small>({{ city.country }})</small>{% endif %}</h1>
+  <a class="hint" href="{{ url_for('home') }}">← New search</a>
+</header>
+
+<!-- Weather: optional. If Open-Meteo failed, forecast is None -->
+<section class="weather-strip" aria-label="7-day weather forecast">
+  {% if forecast %}
+    {{ weather_days(forecast) }}
+    <a class="hint" href="{{ url_for('weather', lat=city.lat, lon=city.lon, name=city.name) }}">Full forecast →</a>
+  {% else %}
+    <p class="hint">Weather is unavailable right now.</p>
+  {% endif %}
+</section>
+
+<!-- Category filter: each chip is a link to the same search with another kind (page resets to 1) -->
+<nav class="chips" aria-label="Categories">
+  {% for key, category in categories.items() %}
+    <a class="chip {% if key == form.kind %}active{% endif %}"
+       href="{{ url_for('search', city=form.city, kind=key) }}"
+       {% if key == form.kind %}aria-current="page"{% endif %}>{{ category[0] }}</a>
+  {% endfor %}
+</nav>
+
+{% if result.places %}
+  <p class="hint">{{ result.total }} places within 10 km · page {{ result.page }} of {{ result.pages }}</p>
   <div class="cards">
-    {% for it in items %}
-      <a class="card" href="{{ url_for('item', item_id=it.id) }}">
-        {% if it.image %}<img src="{{ it.image }}" alt="{{ it.title }}">{% endif %}
-        <span>{{ it.title }}</span>
+    {% for p in result.places %}
+      <a class="card place-card" href="{{ url_for('place', xid=p.xid) }}">
+        <span class="pc-name">{{ p.name }}</span>
+        {% if p.kinds %}<span class="pc-kinds">{{ p.kinds[:2] | join(' · ') }}</span>{% endif %}
+        <span class="pc-dist">📍 {{ p.dist_km }} km from centre{% if p.xid in favorite_ids %} · ❤️ Saved{% endif %}</span>
       </a>
     {% endfor %}
   </div>
+
+  {% if result.pages > 1 %}
+  <nav class="pager" aria-label="Pages">
+    {% if result.page > 1 %}
+      <a href="{{ url_for('search', city=form.city, kind=form.kind, page=result.page - 1) }}">← Previous</a>
+    {% endif %}
+    {% for n in range(1, result.pages + 1) %}
+      {% if n == result.page %}
+        <span class="current" aria-current="page">{{ n }}</span>
+      {% elif n == 1 or n == result.pages or (n - result.page) | abs <= 2 %}
+        <a href="{{ url_for('search', city=form.city, kind=form.kind, page=n) }}">{{ n }}</a>
+      {% elif (n - result.page) | abs == 3 %}
+        <span class="gap">…</span>
+      {% endif %}
+    {% endfor %}
+    {% if result.page < result.pages %}
+      <a href="{{ url_for('search', city=form.city, kind=form.kind, page=result.page + 1) }}">Next →</a>
+    {% endif %}
+  </nav>
+  {% endif %}
 {% else %}
-  <p class="error">Nothing found. Try another search.</p>
+  <div class="empty">
+    <p><strong>No {{ categories[form.kind][0] | lower }} found within 10 km of {{ city.name }}.</strong></p>
+    <p>Try another category above, or <a href="{{ url_for('home') }}">search another city</a>.</p>
+  </div>
 {% endif %}
 {% endblock %}

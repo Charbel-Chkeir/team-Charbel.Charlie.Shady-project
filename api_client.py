@@ -370,26 +370,6 @@ def get_forecast(lat, lon):
 
 
 # ===================================================================
-# Temporary adapters for the STARTER routes (/search?q=, /item/<id>).
-# Step 4 replaces those routes; then these two functions are deleted.
-# ===================================================================
-def search(query):
-    city = find_city(query)
-    if not city:
-        return []
-    return [{"id": p["xid"], "title": p["name"], "image": None}
-            for p in list_places(city["lat"], city["lon"])["places"]]
-
-
-def get_item(item_id):
-    p = get_place(item_id)
-    if not p:
-        return None
-    return {"id": p["xid"], "title": p["name"], "image": p["image"],
-            "description": p["description"] or "No description available."}
-
-
-# ===================================================================
 # Manual test:  OPENTRIPMAP_API_KEY="..." python3 api_client.py Beirut
 # ===================================================================
 if __name__ == "__main__":

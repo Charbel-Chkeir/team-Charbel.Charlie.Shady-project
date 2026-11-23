@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "_macros.html" import weather_days %}
+{% block title %}Weather · {{ label }}{% endblock %}
+{% block content %}
+<a class="hint" href="{{ back_url() }}">← Back</a>
+<h1>7-day weather · {{ label }}</h1>
+
+{{ weather_days(forecast) }}
+
+<table class="weather-table">
+  <caption class="visually-hidden">Daily forecast details</caption>
+  <thead>
+    <tr><th scope="col">Day</th><th scope="col">Conditions</th><th scope="col">Max</th><th scope="col">Min</th><th scope="col">Chance of rain</th></tr>
+  </thead>
+  <tbody>
+    {% for d in forecast %}
+      <tr>
+        <td>{{ d.date.strftime("%a %d %b") }}</td>
+        <td><span aria-hidden="true">{{ d.icon }}</span> {{ d.label }}</td>
+        <td>{{ d.t_max }} °C</td>
+        <td>{{ d.t_min }} °C</td>
+        <td>{{ d.rain if d.rain is not none else "–" }}{% if d.rain is not none %} %{% endif %}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="hint">Forecast by Open-Meteo, in the local time zone of the place.</p>
+{% endblock %}

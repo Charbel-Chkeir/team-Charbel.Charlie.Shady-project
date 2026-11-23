@@ -46,7 +46,69 @@ h1 { color:var(--navy); }
 .photo.is-missing img { display:none; }
 .photo.is-missing .photo-missing { display:flex; }
 .photo-missing span { padding:0; font-weight:500; }   /* not the bold .card span title style */
+
 /* favorites cards: title link as a block, Remove button pinned to the bottom */
 .card > a { display:flex; flex-direction:column; color:inherit; text-decoration:none; }
 .card > a:hover span { color:var(--blue); text-decoration:underline; }
 .card form { margin-top:auto; }   /* takes all free space above it -> sits at the bottom */
+
+/* ---------- Step 4: search, results, place, weather, errors ---------- */
+.visually-hidden { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+.lead { color:#475569; font-size:1.05rem; }
+.hero-search { max-width:720px; margin:2rem auto; text-align:center; }
+.search { flex-wrap:wrap; }
+.search select { padding:.6rem .7rem; border:1px solid var(--line); border-radius:8px; font-size:1rem; background:#fff; }
+.hero-search .error { text-align:left; }
+
+.results-head { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:.5rem; }
+.results-head small { color:#64748b; font-weight:500; font-size:.6em; }
+
+.weather-strip { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; margin:.5rem 0 1rem; }
+/* min-width:0 + max-width:100%: lets the row shrink and scroll by itself on
+   phones instead of making the whole page wider than the screen */
+.weather-days { display:flex; gap:.5rem; list-style:none; padding:0; margin:0; overflow-x:auto;
+                min-width:0; max-width:100%;
+                position:relative; }   /* keeps the hidden screen-reader labels inside the scroll box */
+.weather-day { display:flex; flex-direction:column; align-items:center; min-width:72px; padding:.45rem .3rem;
+               background:var(--bg); border:1px solid var(--line); border-radius:10px; font-size:.85rem; }
+.wd-day { font-weight:600; } .wd-icon { font-size:1.4rem; } .wd-rain { color:#2e74b5; font-size:.8rem; }
+
+.chips { display:flex; flex-wrap:wrap; gap:.4rem; margin:.5rem 0; }
+.chip { padding:.35rem .8rem; border:1px solid var(--line); border-radius:999px; color:#334155;
+        text-decoration:none; font-size:.9rem; background:#fff; }
+.chip:hover { border-color:var(--blue); color:var(--blue); }
+.chip.active { background:var(--navy); border-color:var(--navy); color:#fff; }
+
+.place-card { padding:.8rem; gap:.3rem; min-height:110px; }
+.place-card span { padding:0; }
+.place-card .pc-name { font-weight:700; color:var(--navy); }
+.place-card .pc-kinds { font-weight:500; color:#64748b; font-size:.85rem; }
+.place-card .pc-dist { font-weight:400; font-size:.85rem; margin-top:auto; }
+.place-card:hover { border-color:var(--blue); }
+
+.pager { display:flex; flex-wrap:wrap; gap:.3rem; justify-content:center; margin:1.5rem 0; }
+.pager a, .pager span { padding:.35rem .7rem; border:1px solid var(--line); border-radius:6px; text-decoration:none; color:#334155; }
+.pager .current { background:var(--navy); color:#fff; border-color:var(--navy); }
+.pager .gap { border:0; }
+
+.empty { background:var(--bg); border:1px dashed var(--line); border-radius:10px; padding:1rem 1.2rem; margin-top:1rem; }
+
+.place-layout { display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start; }
+.place-layout .photo-hero { flex:1 1 320px; margin:0; }
+.place-info { flex:1 1 260px; }
+.tags { display:flex; flex-wrap:wrap; gap:.35rem; margin:.2rem 0 1rem; }
+.tag { background:#eaf1fb; color:var(--navy); border-radius:999px; padding:.2rem .65rem; font-size:.85rem; }
+.address { color:#475569; }
+.links { list-style:none; padding:0; line-height:2; }
+
+.weather-table { width:100%; border-collapse:collapse; margin:1.2rem 0; }
+@media (max-width: 520px) { .weather-table { font-size:.85rem; } .weather-table th, .weather-table td { padding:.4rem .25rem; } }
+.weather-table th, .weather-table td { text-align:left; padding:.5rem; border-bottom:1px solid var(--line); }
+
+.error-page { text-align:center; margin:3rem auto; max-width:520px; }
+.error-code { font-size:3.5rem; font-weight:800; color:var(--blue); margin:0; }
+
+body { min-height:100vh; display:flex; flex-direction:column; }
+main.container { flex:1; width:100%; }
+.site-footer { text-align:center; color:#64748b; font-size:.8rem; padding:1.5rem 1rem; border-top:1px solid var(--line); margin-top:2rem; }
+.site-footer a { color:inherit; }
