@@ -89,3 +89,72 @@ def validate_place(form):
         image = ""                            # bad image URL: just drop it
 
     return errors, {"place_xid": xid, "place_name": name, "place_image": image}
+
+
+# ---------- search / weather (query-string input: GET ?city=...&kind=...) ----------
+CITY_MIN, CITY_MAX = 2, 80
+CITY_CHARS = " -'.,"        # besides letters: "Rio de Janeiro", "Saint-Malo", "Ta' Xbiex"
+PAGE_MAX = 100
+
+
+def validate_search(args, categories):
+    """Check /search?city=...&kind=...&page=...
+
+    `categories` = api_client.CATEGORIES (the only allowed kind values).
+    Returns (errors, {"city", "kind", "page"}).
+    """
+    errors = {}
+    city = " ".join(args.get("city", "").split())      # trim + collapse spaces
+    kind = args.get("kind", "all").strip() or "all"
+    page_text = args.get("page", "1").strip() or "1"
+
+    # City: required, length range, only letters (any language) + a few symbols
+    if city == "":
+        errors["city"] = "Please enter a city."
+    elif not CITY_MIN <= len(city) <= CITY_MAX:
+        errors["city"] = f"City name must be {CITY_MIN} to {CITY_MAX} characters."
+    elif not all(ch.isalpha() or ch in CITY_CHARS for ch in city):
+        errors["city"] = "City name can only contain letters, spaces and - ' . ,"
+
+    # Category: must be one of OUR keys (never sent to the API unchecked)
+    if kind not in categories:
+        errors["kind"] = "Unknown category."
+
+    # Page: whole number between 1 and PAGE_MAX
+    page = 1
+    # isdecimal(), not isdigit(): "²".isdigit() is True but int("²") crashes
+    if not page_text.isdecimal() or not 1 <= int(page_text) <= PAGE_MAX:
+        errors["page"] = "Invalid page number."
+    else:
+        page = int(page_text)
+
+    return errors, {"city": city, "kind": kind, "page": page}
+
+
+def _number(text, low, high):
+    """'33.89' -> 33.89 if it is a real number in [low, high], else None."""
+    try:
+        value = float(text)
+    except (TypeError, ValueError):
+        return None
+    if value != value or not low <= value <= high:      # value != value -> NaN
+        return None
+    return value
+
+
+def validate_coords(args):
+    """Check ?lat=...&lon=...(&name=...) for the weather page."""
+    errors = {}
+    lat = _number(args.get("lat"), -90, 90)
+    lon = _number(args.get("lon"), -180, 180)
+    if lat is None:
+        errors["lat"] = "Latitude must be a number between -90 and 90."
+    if lon is None:
+        errors["lon"] = "Longitude must be a number between -180 and 180."
+    name = " ".join(args.get("name", "").split())[:80]  # optional label, shortened
+    return errors, {"lat": lat, "lon": lon, "name": name}
+
+
+def is_valid_xid(xid):
+    """OpenTripMap place id in a URL like /place/<xid>."""
+    return bool(XID.match(xid or ""))

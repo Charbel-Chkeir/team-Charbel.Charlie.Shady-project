@@ -1,10 +1,35 @@
 {% extends "base.html" %}
+{% block title %}Discover{% endblock %}
 {% block content %}
-<h1>Find something</h1>
-<!-- TODO: change this to match your topic (e.g. "Search recipes", "Find a book") -->
-<form class="search" action="{{ url_for('search') }}" method="get">
-  <input type="text" name="q" placeholder="Search...">
-  <button type="submit">Search</button>
-</form>
-<p class="hint">This starter shows sample items. Edit <code>api_client.py</code> to use your own API.</p>
+<section class="hero-search">
+  <h1>Where are you going next?</h1>
+  <p class="lead">Search a city to discover nearby attractions, check the weather and plan your trip.</p>
+
+  {% if errors.get('form') %}<p class="error" role="alert">{{ errors['form'] }}</p>{% endif %}
+
+  <!-- GET form: the search is a URL (/search?city=...&kind=...) that can be bookmarked or shared -->
+  <form class="search" action="{{ url_for('search') }}" method="get" novalidate>
+    <label class="visually-hidden" for="city">City</label>
+    <input id="city" type="text" name="city" value="{{ form.get('city', '') }}"
+           placeholder="e.g. Beirut, Rome, Paris" maxlength="80" autocomplete="off" required>
+
+    <label class="visually-hidden" for="kind">Category</label>
+    <select id="kind" name="kind">
+      {% for key, category in categories.items() %}
+        <option value="{{ key }}" {% if form.get('kind') == key %}selected{% endif %}>{{ category[0] }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit">Search</button>
+  </form>
+  {% if errors.get('city') %}<span class="error">{{ errors['city'] }}</span>{% endif %}
+  {% if errors.get('kind') %}<span class="error">{{ errors['kind'] }}</span>{% endif %}
+  {% if errors.get('page') %}<span class="error">{{ errors['page'] }}</span>{% endif %}
+
+  <p class="hint">Try:
+    {% for c in ["Beirut", "Byblos", "Rome", "Paris", "Istanbul"] %}
+      <a href="{{ url_for('search', city=c) }}">{{ c }}</a>{% if not loop.last %} · {% endif %}
+    {% endfor %}
+  </p>
+</section>
 {% endblock %}

@@ -19,7 +19,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from models import db, User, Favorite
 import api_client
-from validators import validate_signup, validate_login, validate_place
+from validators import (validate_signup, validate_login, validate_place,
+                        validate_search, validate_coords, is_valid_xid)
 
 app = Flask(__name__)
 
@@ -83,11 +84,13 @@ def load_current_user():
 
 @app.context_processor
 def inject_globals():
-    """Make the logged-in user (and their favorite ids) available in templates."""
+    """Variables every template can use: the logged-in user, the ids of their
+    favorite places, and the category list (for search forms and filters)."""
     favorite_ids = set()
     if g.user:
         favorite_ids = {f.place_xid for f in g.user.favorites}
-    return {"current_user": g.user, "favorite_ids": favorite_ids}
+    return {"current_user": g.user, "favorite_ids": favorite_ids,
+            "categories": api_client.CATEGORIES}
 
 
 def login_required(view):
@@ -99,6 +102,16 @@ def login_required(view):
             return redirect(url_for("login", next=request.path))
         return view(*args, **kwargs)
     return wrapped
+
+
+@app.template_global()
+def back_url():
+    """URL for a "← Back" link: the previous page if it was on OUR site
+    (and is not this same page), otherwise the home page."""
+    ref = request.referrer or ""
+    if ref.startswith(request.host_url) and ref != request.url:
+        return ref
+    return url_for("home")
 
 
 def safe_next(default_endpoint):
@@ -120,33 +133,88 @@ def handle_csrf_error(e):
     return redirect(request.referrer or url_for("home"))
 
 
-# ---------- content (from your API) --------------------------------
+# ===================================================================
+# CONTENT  (search, place details, weather -- data from api_client.py)
+# ===================================================================
+def api_error_page(error):
+    """External API failed (slow, down, rate-limited): friendly page, HTTP 503."""
+    return render_template("error.html", code=503, title="Service unavailable",
+                           message=str(error)), 503
+
+
 @app.route("/")
 def home():
-    return render_template("home.html")
+    return render_template("home.html", errors={}, form={"city": "", "kind": "all"})
 
 
 @app.route("/search")
 def search():
-    query = request.args.get("q", "").strip()
-    try:
-        items = api_client.search(query) if query else []
-    except api_client.ApiError as e:     # API down/slow/limited -> message, not a crash
-        flash(str(e))
-        items = []
-    return render_template("results.html", items=items, query=query)
+    """/search?city=Rome&kind=historic&page=2"""
+    errors, form = validate_search(request.args, api_client.CATEGORIES)
+    if errors:
+        return render_template("home.html", errors=errors, form=form), 400
 
-
-@app.route("/item/<item_id>")
-def item(item_id):
     try:
-        data = api_client.get_item(item_id)
+        city = api_client.find_city(form["city"])
+        if city is None:
+            errors["city"] = f"We could not find a city called \"{form['city']}\"."
+            return render_template("home.html", errors=errors, form=form), 404
+        result = api_client.list_places(city["lat"], city["lon"],
+                                        form["kind"], form["page"])
     except api_client.ApiError as e:
-        flash(str(e))
-        return redirect(url_for("home"))
-    if not data:
+        return render_template("home.html", form=form,
+                               errors={"form": str(e)}), 503
+
+    # Weather is a bonus: if it fails, the attractions are still shown.
+    try:
+        forecast = api_client.get_forecast(city["lat"], city["lon"])
+    except api_client.ApiError:
+        forecast = None
+
+    return render_template("results.html", city=city, form=form,
+                           result=result, forecast=forecast)
+
+
+@app.route("/place/<xid>")
+def place(xid):
+    if not is_valid_xid(xid):
         abort(404)
-    return render_template("detail.html", item=data)
+    try:
+        data = api_client.get_place(xid)
+    except api_client.ApiError as e:
+        return api_error_page(e)
+    if data is None:
+        abort(404)
+    return render_template("place.html", place=data)
+
+
+@app.route("/weather")
+def weather():
+    """/weather?lat=33.89&lon=35.50&name=Beirut"""
+    errors, form = validate_coords(request.args)
+    if errors:
+        return render_template("error.html", code=400, title="Invalid location",
+                               message=" ".join(errors.values())), 400
+    try:
+        forecast = api_client.get_forecast(form["lat"], form["lon"])
+    except api_client.ApiError as e:
+        return api_error_page(e)
+    label = form["name"] or f"{form['lat']:.2f}, {form['lon']:.2f}"
+    return render_template("weather.html", forecast=forecast, label=label)
+
+
+# ---------- error pages ----------------------------------------------
+@app.errorhandler(404)
+def not_found(e):
+    return render_template("error.html", code=404, title="Page not found",
+                           message="The page or place you asked for does not exist."), 404
+
+
+@app.errorhandler(500)
+def server_error(e):
+    db.session.rollback()       # a failed DB operation must not break the next request
+    return render_template("error.html", code=500, title="Something went wrong",
+                           message="An unexpected error happened. Please try again."), 500
 
 
 # ===================================================================

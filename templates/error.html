@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<!-- One template for every error page: 400, 404, 500, 503 (external API down) -->
+<section class="error-page">
+  <p class="error-code">{{ code }}</p>
+  <h1>{{ title }}</h1>
+  <p>{{ message }}</p>
+  <p><a class="btn" href="{{ url_for('home') }}">Back to search</a></p>
+</section>
+{% endblock %}
