@@ -3,7 +3,7 @@
 {% block content %}
 <article class="detail">
   <h1>{{ item.title }}</h1>
-  <img class="hero" src="{{ item.image }}" alt="{{ item.title }}">
+  {% if item.image %}<img class="hero" src="{{ item.image }}" alt="{{ item.title }}" onerror="this.remove()">{% endif %}
 
   {% if current_user %}
     {% if item.id in favorite_ids %}
@@ -18,7 +18,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="place_xid" value="{{ item.id }}">
         <input type="hidden" name="place_name" value="{{ item.title }}">
-        <input type="hidden" name="place_image" value="{{ item.image }}">
+        <input type="hidden" name="place_image" value="{{ item.image or '' }}">
         <input type="hidden" name="next" value="{{ request.path }}">
         <button class="btn save">Save to favorites</button>
       </form>

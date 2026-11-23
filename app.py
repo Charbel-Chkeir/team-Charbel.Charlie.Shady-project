@@ -129,13 +129,21 @@ def home():
 @app.route("/search")
 def search():
     query = request.args.get("q", "").strip()
-    items = api_client.search(query) if query else []
+    try:
+        items = api_client.search(query) if query else []
+    except api_client.ApiError as e:     # API down/slow/limited -> message, not a crash
+        flash(str(e))
+        items = []
     return render_template("results.html", items=items, query=query)
 
 
 @app.route("/item/<item_id>")
 def item(item_id):
-    data = api_client.get_item(item_id)
+    try:
+        data = api_client.get_item(item_id)
+    except api_client.ApiError as e:
+        flash(str(e))
+        return redirect(url_for("home"))
     if not data:
         abort(404)
     return render_template("detail.html", item=data)
