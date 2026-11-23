@@ -144,6 +144,11 @@ def handle_csrf_error(e):
 # ===================================================================
 # CONTENT  (search, place details, weather -- data from api_client.py)
 # ===================================================================
+def map_marker(lat, lon, label, title, url=None):
+    """One marker for static/js/map.js (sent to the page as JSON)."""
+    return {"lat": lat, "lon": lon, "label": label, "title": title, "url": url}
+
+
 def api_error_page(error):
     """External API failed (slow, down, rate-limited): friendly page, HTTP 503."""
     return render_template("error.html", code=503, title="Service unavailable",
@@ -179,8 +184,11 @@ def search():
     except api_client.ApiError:
         forecast = None
 
-    return render_template("results.html", city=city, form=form,
-                           result=result, forecast=forecast)
+    # Numbered markers 1..12 -- the same numbers are shown on the cards
+    markers = [map_marker(p["lat"], p["lon"], str(n), p["name"], url_for("place", xid=p["xid"]))
+               for n, p in enumerate(result["places"], start=1)]
+    return render_template("results.html", city=city, form=form, result=result,
+                           forecast=forecast, map_data={"markers": markers})
 
 
 @app.route("/place/<xid>")
@@ -194,7 +202,8 @@ def place(xid):
     if data is None:
         abort(404)
     my_trips = my_trips_for_select() if g.user else []
-    return render_template("place.html", place=data, my_trips=my_trips)
+    map_data = {"markers": [map_marker(data["lat"], data["lon"], "★", data["name"])], "zoom": 16}
+    return render_template("place.html", place=data, my_trips=my_trips, map_data=map_data)
 
 
 @app.route("/weather")
@@ -451,7 +460,17 @@ def trip_detail(trip_id):
             forecast = api_client.get_forecast(trip.dest_lat, trip.dest_lon)
         except api_client.ApiError:
             forecast = None          # weather is optional
-    return render_template("trip.html", trip=trip, forecast=forecast)
+    # Number the stops in itinerary order (day 1 first, unscheduled last).
+    # The SAME numbers appear in the list and on the map.
+    numbers, markers = {}, []
+    for day, items in trip.itinerary():
+        for item in items:
+            numbers[item.id] = len(numbers) + 1
+            if item.place_lat is not None and item.place_lon is not None:
+                markers.append(map_marker(item.place_lat, item.place_lon, str(numbers[item.id]),
+                                          item.place_name, url_for("place", xid=item.place_xid)))
+    return render_template("trip.html", trip=trip, forecast=forecast, numbers=numbers,
+                           map_data={"markers": markers, "line": True})
 
 
 @app.route("/trips/<int:trip_id>/edit", methods=["GET", "POST"])

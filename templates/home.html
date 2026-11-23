@@ -1,17 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Discover{% endblock %}
 {% block content %}
-<section class="hero-search">
+<section class="hero">
   <h1>Where are you going next?</h1>
-  <p class="lead">Search a city to discover nearby attractions, check the weather and plan your trip.</p>
+  <p class="lead">Discover attractions in any city, check the 7-day weather and plan your trip day by day.</p>
 
   {% if errors.get('form') %}<p class="error" role="alert">{{ errors['form'] }}</p>{% endif %}
 
-  <!-- GET form: the search is a URL (/search?city=...&kind=...) that can be bookmarked or shared -->
-  <form class="search" action="{{ url_for('search') }}" method="get" novalidate>
+  <!-- GET form: the search is a URL (/search?city=...&kind=...) that can be bookmarked or shared.
+       data-loading: app.js shows "Searching…" while the APIs answer -->
+  <form class="search big" action="{{ url_for('search') }}" method="get" novalidate data-loading="Searching…">
     <label class="visually-hidden" for="city">City</label>
     <input id="city" type="text" name="city" value="{{ form.get('city', '') }}"
-           placeholder="e.g. Beirut, Rome, Paris" maxlength="80" autocomplete="off" required>
+           placeholder="Type a city: Beirut, Rome, Paris…" maxlength="80" autocomplete="off" required
+           {% if errors.get('city') %}aria-invalid="true" aria-describedby="city-error"{% endif %}>
 
     <label class="visually-hidden" for="kind">Category</label>
     <select id="kind" name="kind">
@@ -22,14 +24,24 @@
 
     <button type="submit">Search</button>
   </form>
-  {% if errors.get('city') %}<span class="error">{{ errors['city'] }}</span>{% endif %}
-  {% if errors.get('kind') %}<span class="error">{{ errors['kind'] }}</span>{% endif %}
-  {% if errors.get('page') %}<span class="error">{{ errors['page'] }}</span>{% endif %}
+  {% if errors.get('city') %}<p class="error" id="city-error">{{ errors['city'] }}</p>{% endif %}
+  {% if errors.get('kind') %}<p class="error">{{ errors['kind'] }}</p>{% endif %}
+  {% if errors.get('page') %}<p class="error">{{ errors['page'] }}</p>{% endif %}
 
-  <p class="hint">Try:
+  <p class="popular">Popular:
     {% for c in ["Beirut", "Byblos", "Rome", "Paris", "Istanbul"] %}
-      <a href="{{ url_for('search', city=c) }}">{{ c }}</a>{% if not loop.last %} · {% endif %}
+      <a data-loading href="{{ url_for('search', city=c) }}">{{ c }}</a>
     {% endfor %}
   </p>
+</section>
+
+<section class="features" aria-label="What you can do">
+  <div class="feature"><span aria-hidden="true">🏛️</span><h2>Discover</h2>
+    <p>Museums, historic sites, nature and more around the city centre, with photos and descriptions.</p></div>
+  <div class="feature"><span aria-hidden="true">☀️</span><h2>Check the weather</h2>
+    <p>A 7-day forecast for every destination, so you know what to pack.</p></div>
+  <div class="feature"><span aria-hidden="true">🗺️</span><h2>Plan your trip</h2>
+    <p>{% if current_user %}<a href="{{ url_for('trips') }}">Create trips</a>{% else %}<a href="{{ url_for('signup') }}">Sign up</a> to create trips{% endif %},
+      add places day by day and see them on a map.</p></div>
 </section>
 {% endblock %}

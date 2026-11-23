@@ -1,20 +1,19 @@
 {#
-  Reusable Jinja macros. Use in a template with:
-      {% from "_macros.html" import place_image %}
-      {{ place_image(url, "Alt text", "card") }}   -> kind "card" (small) or "hero" (big)
+  Reusable Jinja macros. Import what a template needs, e.g.:
+      {% from "_macros.html" import place_image, map_box, leaflet_head, leaflet_scripts %}
 #}
 
 {#
   place_image: a place photo with a built-in fallback.
   - No URL at all (OpenTripMap has no photo)  -> the box starts as "is-missing".
-  - URL exists but fails to load (dead link)  -> onerror adds "is-missing".
+  - URL exists but fails to load (dead link)  -> static/js/app.js adds "is-missing".
   CSS (.photo.is-missing) then hides the <img> and shows "Image unavailable".
+  kind: "card" (small) or "hero" (big).
 #}
 {% macro place_image(url, alt, kind="card") %}
 <div class="photo photo-{{ kind }}{% if not url %} is-missing{% endif %}">
   {% if url %}
-    <img src="{{ url }}" alt="{{ alt }}" loading="lazy"
-         onerror="this.parentElement.classList.add('is-missing')">
+    <img src="{{ url }}" alt="{{ alt }}" loading="lazy">
   {% endif %}
   <div class="photo-missing">
     <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -26,6 +25,51 @@
     <span>Image unavailable</span>
   </div>
 </div>
+{% endmacro %}
+
+
+{#
+  kind_icon: an emoji for a place, from its category labels
+  (["Museums", "Cultural"] -> 🏛️). Purely decorative (aria-hidden).
+#}
+{% macro kind_icon(kinds) -%}
+{%- set k = (kinds | join(" ")) | lower -%}
+<span class="kind-icon" aria-hidden="true">
+{%- if "museum" in k or "gallery" in k %}🏛️
+{%- elif "religion" in k or "church" in k or "cathedral" in k or "mosque" in k or "temple" in k or "monaster" in k %}🛐
+{%- elif "beach" in k %}🏖️
+{%- elif "natural" in k or "nature" in k or "park" in k or "garden" in k or "mountain" in k %}🌿
+{%- elif "archaeolog" in k or "historic" in k or "fort" in k or "castle" in k %}🏺
+{%- elif "architecture" in k or "tower" in k or "bridge" in k %}🏰
+{%- elif "theatre" in k or "amusement" in k or "entertainment" in k %}🎭
+{%- elif "food" in k or "restaurant" in k or "cafe" in k %}🍽️
+{%- elif "monument" in k or "memorial" in k %}🗿
+{%- else %}📍{% endif -%}
+</span>
+{%- endmacro %}
+
+
+{#
+  Map (Leaflet). A page with a map:
+    {% block head %}{{ leaflet_head() }}{% endblock %}
+    {{ map_box(map_data, "Map of ...") }}
+    {% block scripts %}{{ leaflet_scripts() }}{% endblock %}
+  map_data is built in app.py; |tojson writes it as safe JSON (quotes and
+  < > & are escaped) and static/js/map.js reads it back from data-map.
+#}
+{% macro leaflet_head() %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+{% endmacro %}
+
+{% macro leaflet_scripts() %}
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/map.js') }}" defer></script>
+{% endmacro %}
+
+{% macro map_box(map_data, label, size="") %}
+{% if map_data and map_data.markers %}
+<div class="map {{ size }}" role="region" aria-label="{{ label }}" data-map='{{ map_data | tojson }}'></div>
+{% endif %}
 {% endmacro %}
 
 
