@@ -40,6 +40,40 @@
         <p><a href="{{ url_for('login', next=request.path) }}">Log in</a> to save this place or add it to a trip.</p>
       {% endif %}
 
+      <!-- Add to one of MY trips (the server re-checks that the trip is mine) -->
+      {% if current_user %}
+        <section class="add-trip">
+          <h2>Add to a trip</h2>
+          {% if my_trips %}
+            <form method="post" action="{{ url_for('trip_item_add') }}" class="add-trip-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="place_xid" value="{{ place.xid }}">
+              <input type="hidden" name="place_name" value="{{ place.name }}">
+              <input type="hidden" name="place_lat" value="{{ place.lat }}">
+              <input type="hidden" name="place_lon" value="{{ place.lon }}">
+              <input type="hidden" name="next" value="{{ request.path }}">
+              <label>Trip
+                <select name="trip_id" required>
+                  {% for t in my_trips %}
+                    <option value="{{ t.id }}">{{ t.title }} ({{ t.start_date.strftime("%d %b") }} – {{ t.end_date.strftime("%d %b") }})</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>Day <small>(optional)</small>
+                <input type="date" name="visit_date">
+              </label>
+              <label>Notes <small>(optional)</small>
+                <textarea name="notes" rows="2" maxlength="500" placeholder="e.g. Book tickets online, go early"></textarea>
+              </label>
+              <button type="submit" class="btn">Add to trip</button>
+            </form>
+          {% else %}
+            <p class="hint">You have no upcoming trips.
+              <a href="{{ url_for('trip_new', next=request.path) }}">Create a trip</a> first, then come back here.</p>
+          {% endif %}
+        </section>
+      {% endif %}
+
       <ul class="links">
         <li><a href="{{ url_for('weather', lat=place.lat, lon=place.lon, name=place.name) }}">☀️ Weather forecast here</a></li>
         {% if place.wikipedia %}

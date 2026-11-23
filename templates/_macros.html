@@ -31,12 +31,14 @@
 
 {#
   weather_days: one small box per day from api_client.get_forecast().
-  Used on the results page (strip) and on the weather page.
+  Used on the results page (strip), the weather page and the trip page.
+  Optional start/end: days inside that range get the "in-trip" highlight.
 #}
-{% macro weather_days(forecast) %}
+{% macro weather_days(forecast, start=none, end=none) %}
 <ul class="weather-days">
   {% for d in forecast %}
-    <li class="weather-day" title="{{ d.label }}">
+    {% set in_trip = start and end and start <= d.date <= end %}
+    <li class="weather-day{% if in_trip %} in-trip{% endif %}" title="{{ d.label }}{% if in_trip %} (trip day){% endif %}">
       <span class="wd-day">{{ "Today" if loop.first else d.day }}</span>
       <span class="wd-icon" aria-hidden="true">{{ d.icon }}</span>
       <span class="wd-temp"><strong>{{ d.t_max }}°</strong> / {{ d.t_min }}°</span>

@@ -13,7 +13,7 @@ without calling the API again for every row.
 
 After changing this file:  python reset_db.py   (local, wipes local data).
 """
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from flask_sqlalchemy import SQLAlchemy
 
@@ -66,14 +66,44 @@ class Trip(db.Model):
                            nullable=False)
 
     # Items come back already sorted: by day, then by the order chosen.
+    # nulls_last(): places without a day come last on BOTH databases
+    # (SQLite would put NULL first, PostgreSQL puts it last).
     items = db.relationship("TripItem", backref="trip",
                             cascade="all, delete-orphan",
-                            order_by="(TripItem.visit_date, TripItem.sort_order)")
+                            order_by="(TripItem.visit_date.asc().nulls_last(), TripItem.sort_order)")
 
     # Backstop in the database itself; validators.py checks this first and
     # shows a friendly message.
     __table_args__ = (db.CheckConstraint("end_date >= start_date",
                                          name="trip_dates_order"),)
+
+    # ----- helpers used by the templates (plain Python, NOT columns) -----
+    @property
+    def days(self):
+        """Number of days, counting both the first and the last day."""
+        return (self.end_date - self.start_date).days + 1
+
+    @property
+    def status(self):
+        """'upcoming', 'ongoing' or 'past' compared with today."""
+        today = date.today()
+        if today < self.start_date:
+            return "upcoming"
+        if today > self.end_date:
+            return "past"
+        return "ongoing"
+
+    def itinerary(self):
+        """Items grouped by day for the trip page:
+            [(date(2027,1,1), [item, item]), (date(2027,1,2), [item]), (None, [...])]
+        Days in order; places without a date ("not scheduled yet") come last."""
+        groups = {}
+        for item in self.items:              # already sorted by date, then order
+            groups.setdefault(item.visit_date, []).append(item)
+        dated = sorted((d, items) for d, items in groups.items() if d is not None)
+        if None in groups:
+            dated.append((None, groups[None]))
+        return dated
 
 
 class TripItem(db.Model):

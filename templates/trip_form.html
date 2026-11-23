@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{# One form for both "new trip" (trip is None) and "edit trip" #}
+{% block title %}{{ "Edit trip" if trip else "New trip" }}{% endblock %}
+{% block content %}
+<a class="hint" href="{{ url_for('trip_detail', trip_id=trip.id) if trip else url_for('trips') }}">← Back</a>
+<h1>{{ "Edit trip" if trip else "Plan a new trip" }}</h1>
+
+<form method="post" novalidate class="auth trip-form"
+      action="{{ url_for('trip_edit', trip_id=trip.id) if trip else url_for('trip_new') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% if not trip and data.get('next') %}<input type="hidden" name="next" value="{{ data.get('next') }}">{% endif %}
+
+  <label>Title
+    <input type="text" name="title" value="{{ data.get('title', '') }}" maxlength="120"
+           placeholder="e.g. Summer in Rome" required>
+  </label>
+  {% if errors.get('title') %}<span class="error">{{ errors['title'] }}</span>{% endif %}
+
+  <label>Destination city
+    <input type="text" name="destination" value="{{ data.get('destination', '') }}" maxlength="80"
+           placeholder="e.g. Rome" required>
+  </label>
+  {% if errors.get('destination') %}<span class="error">{{ errors['destination'] }}</span>{% endif %}
+
+  <div class="date-row">
+    <label>Start date
+      <input type="date" name="start_date" value="{{ data.get('start_date', '') }}" required>
+    </label>
+    <label>End date
+      <input type="date" name="end_date" value="{{ data.get('end_date', '') }}" required>
+    </label>
+  </div>
+  {% if errors.get('start_date') %}<span class="error">{{ errors['start_date'] }}</span>{% endif %}
+  {% if errors.get('end_date') %}<span class="error">{{ errors['end_date'] }}</span>{% endif %}
+
+  <button type="submit">{{ "Save changes" if trip else "Create trip" }}</button>
+</form>
+{% endblock %}

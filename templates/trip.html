@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_macros.html" import weather_days %}
+{% block title %}{{ trip.title }}{% endblock %}
+{% block content %}
+<a class="hint" href="{{ url_for('trips') }}">← My trips</a>
+
+<header class="trip-head">
+  <div>
+    <h1>{{ trip.title }} <span class="badge">{{ trip.status | capitalize }}</span></h1>
+    <p class="hint">📍 {{ trip.destination }} · 🗓️ {{ trip.start_date.strftime("%a %d %b") }} –
+      {{ trip.end_date.strftime("%a %d %b %Y") }} · {{ trip.days }} day{{ "s" if trip.days > 1 }}</p>
+  </div>
+  <div class="trip-actions">
+    <a class="btn" href="{{ url_for('search', city=trip.destination) }}">+ Find places in {{ trip.destination }}</a>
+    <a class="btn secondary" href="{{ url_for('trip_edit', trip_id=trip.id) }}">Edit</a>
+    <!-- Delete changes data -> POST + CSRF token; confirm() asks before sending -->
+    <form method="post" action="{{ url_for('trip_delete', trip_id=trip.id) }}"
+          onsubmit="return confirm('Delete this trip and all its planned places?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn remove">Delete</button>
+    </form>
+  </div>
+</header>
+
+{% if forecast %}
+  <section class="weather-strip" aria-label="Weather forecast">
+    {{ weather_days(forecast, trip.start_date, trip.end_date) }}
+    <p class="hint">Next 7 days in {{ trip.destination }}. Highlighted days are part of this trip.</p>
+  </section>
+{% endif %}
+
+<h2>Itinerary</h2>
+{% set days = trip.itinerary() %}
+{% if days %}
+  {% for day, items in days %}
+    <section class="day">
+      <h3>{% if day %}Day {{ (day - trip.start_date).days + 1 }} · {{ day.strftime("%A %d %B") }}{% else %}Not scheduled yet{% endif %}</h3>
+      <ol class="itinerary">
+        {% for item in items %}
+          <li class="stop" id="item-{{ item.id }}">
+            <div class="stop-main">
+              <a class="stop-name" href="{{ url_for('place', xid=item.place_xid) }}">{{ item.place_name }}</a>
+              {% if item.notes %}<p class="stop-notes" dir="auto">{{ item.notes }}</p>{% endif %}
+            </div>
+
+            <div class="stop-actions">
+              <!-- ↑ hidden for the first place of the day, ↓ for the last -->
+              {% if not loop.first %}
+                <form method="post" action="{{ url_for('trip_item_move', trip_id=trip.id, item_id=item.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="icon-btn" name="direction" value="up" title="Move up" aria-label="Move up">↑</button>
+                </form>
+              {% endif %}
+              {% if not loop.last %}
+                <form method="post" action="{{ url_for('trip_item_move', trip_id=trip.id, item_id=item.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="icon-btn" name="direction" value="down" title="Move down" aria-label="Move down">↓</button>
+                </form>
+              {% endif %}
+              <form method="post" action="{{ url_for('trip_item_delete', trip_id=trip.id, item_id=item.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="icon-btn danger" title="Remove from trip" aria-label="Remove {{ item.place_name }} from trip">✕</button>
+              </form>
+            </div>
+
+            <!-- <details> = a built-in show/hide box, no JavaScript needed -->
+            <details class="stop-edit">
+              <summary>Edit day &amp; notes</summary>
+              <form method="post" action="{{ url_for('trip_item_update', trip_id=trip.id, item_id=item.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label>Day
+                  <input type="date" name="visit_date" value="{{ item.visit_date.isoformat() if item.visit_date else '' }}"
+                         min="{{ trip.start_date.isoformat() }}" max="{{ trip.end_date.isoformat() }}">
+                </label>
+                <label>Notes
+                  <textarea name="notes" maxlength="500" rows="2">{{ item.notes or '' }}</textarea>
+                </label>
+                <button type="submit">Save</button>
+              </form>
+            </details>
+          </li>
+        {% endfor %}
+      </ol>
+    </section>
+  {% endfor %}
+{% else %}
+  <div class="empty">
+    <p><strong>No places planned yet.</strong></p>
+    <p><a href="{{ url_for('search', city=trip.destination) }}">Search {{ trip.destination }}</a>,
+       open an attraction and press "Add to trip".</p>
+  </div>
+{% endif %}
+{% endblock %}

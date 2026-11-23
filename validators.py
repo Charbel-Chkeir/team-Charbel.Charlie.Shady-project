@@ -6,6 +6,7 @@ means the input is valid. The browser's own checks (type="email", required...)
 can be bypassed with curl / Thunder Client, so the SERVER always re-checks.
 """
 import re
+from datetime import date
 
 # something@domain.tld  (simple on purpose: the real test is the user logging in)
 EMAIL = re.compile(r"^[\w.+-]+@[\w-]+\.[\w.-]+$")
@@ -158,3 +159,86 @@ def validate_coords(args):
 def is_valid_xid(xid):
     """OpenTripMap place id in a URL like /place/<xid>."""
     return bool(XID.match(xid or ""))
+
+
+# ---------- trips & itinerary items ----------------------------------------
+TRIP_TITLE_MAX = 120
+TRIP_MAX_DAYS = 60          # a longer "trip" is almost certainly a typo
+NOTES_MAX = 500
+
+
+def parse_date(text):
+    """'2027-01-05' (what <input type="date"> sends) -> date, or None if invalid."""
+    try:
+        d = date.fromisoformat((text or "").strip())
+    except ValueError:
+        return None
+    return d if 2000 <= d.year <= 2100 else None
+
+
+def validate_trip(form):
+    """New/edit trip form: title, destination, start_date, end_date."""
+    errors = {}
+    title = " ".join(form.get("title", "").split())
+    destination = " ".join(form.get("destination", "").split())
+    start = parse_date(form.get("start_date"))
+    end = parse_date(form.get("end_date"))
+
+    if title == "":
+        errors["title"] = "Give your trip a title."
+    elif len(title) > TRIP_TITLE_MAX:
+        errors["title"] = f"Title must be at most {TRIP_TITLE_MAX} characters."
+
+    # Same rule as the city search box (the destination is looked up as a city)
+    if destination == "":
+        errors["destination"] = "Enter the destination city."
+    elif not CITY_MIN <= len(destination) <= CITY_MAX:
+        errors["destination"] = f"Destination must be {CITY_MIN} to {CITY_MAX} characters."
+    elif not all(ch.isalpha() or ch in CITY_CHARS for ch in destination):
+        errors["destination"] = "Destination can only contain letters, spaces and - ' . ,"
+
+    if start is None:
+        errors["start_date"] = "Choose a valid start date."
+    if end is None:
+        errors["end_date"] = "Choose a valid end date."
+    if start and end:
+        if end < start:
+            errors["end_date"] = "The end date cannot be before the start date."
+        elif (end - start).days + 1 > TRIP_MAX_DAYS:
+            errors["end_date"] = f"A trip can last at most {TRIP_MAX_DAYS} days."
+
+    return errors, {"title": title, "destination": destination,
+                    "start_date": start, "end_date": end}
+
+
+def validate_item_details(form, trip):
+    """Visit date (optional, must be inside the trip) and notes (optional)."""
+    errors = {}
+    visit_text = form.get("visit_date", "").strip()
+    notes = form.get("notes", "").strip()
+    visit = None
+
+    if visit_text:
+        visit = parse_date(visit_text)
+        if visit is None:
+            errors["visit_date"] = "Invalid visit date."
+        elif not trip.start_date <= visit <= trip.end_date:
+            errors["visit_date"] = (f"The visit date must be between "
+                                    f"{trip.start_date:%d %b} and {trip.end_date:%d %b %Y}.")
+    if len(notes) > NOTES_MAX:
+        errors["notes"] = f"Notes must be at most {NOTES_MAX} characters."
+
+    return errors, {"visit_date": visit, "notes": notes or None}
+
+
+def validate_trip_item(form, trip):
+    """'Add to trip' form = place fields (hidden) + visit date + notes."""
+    errors, place = validate_place(form)
+    details_errors, details = validate_item_details(form, trip)
+    errors.update(details_errors)
+    # Coordinates are optional (only used to draw the trip map)
+    place["place_lat"] = _number(form.get("place_lat"), -90, 90)
+    place["place_lon"] = _number(form.get("place_lon"), -180, 180)
+    place.pop("place_image", None)               # trip items do not store images
+    place.update(details)
+    return errors, place

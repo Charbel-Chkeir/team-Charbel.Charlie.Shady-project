@@ -8,7 +8,7 @@ email + password with Flask sessions.
 Run locally:   flask run --debug    ->   http://127.0.0.1:5000
 """
 import os
-from datetime import timedelta
+from datetime import date, timedelta
 from functools import wraps
 
 from flask import (Flask, render_template, request, redirect, url_for,
@@ -17,10 +17,11 @@ from flask_wtf.csrf import CSRFProtect, CSRFError
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from models import db, User, Favorite
+from models import db, User, Favorite, Trip, TripItem
 import api_client
 from validators import (validate_signup, validate_login, validate_place,
-                        validate_search, validate_coords, is_valid_xid)
+                        validate_search, validate_coords, is_valid_xid,
+                        validate_trip, validate_trip_item, validate_item_details)
 
 app = Flask(__name__)
 
@@ -91,6 +92,13 @@ def inject_globals():
         favorite_ids = {f.place_xid for f in g.user.favorites}
     return {"current_user": g.user, "favorite_ids": favorite_ids,
             "categories": api_client.CATEGORIES}
+
+
+def my_trips_for_select():
+    """The user's trips that are not over yet (choices for "Add to trip")."""
+    return (Trip.query.filter_by(user_id=g.user.id)
+            .filter(Trip.end_date >= date.today())
+            .order_by(Trip.start_date).all())
 
 
 def login_required(view):
@@ -185,7 +193,8 @@ def place(xid):
         return api_error_page(e)
     if data is None:
         abort(404)
-    return render_template("place.html", place=data)
+    my_trips = my_trips_for_select() if g.user else []
+    return render_template("place.html", place=data, my_trips=my_trips)
 
 
 @app.route("/weather")
@@ -208,6 +217,18 @@ def weather():
 def not_found(e):
     return render_template("error.html", code=404, title="Page not found",
                            message="The page or place you asked for does not exist."), 404
+
+
+@app.errorhandler(403)
+def forbidden(e):
+    return render_template("error.html", code=403, title="Not allowed",
+                           message="This page belongs to another account."), 403
+
+
+@app.errorhandler(400)
+def bad_request(e):
+    return render_template("error.html", code=400, title="Bad request",
+                           message="The request was not valid."), 400
 
 
 @app.errorhandler(500)
@@ -340,6 +361,223 @@ def favorites_remove():
     else:
         flash("That place is not in your favorites.")
     return redirect(safe_next("favorites"))
+
+
+# ===================================================================
+# TRIPS & ITINERARY  (login required + ownership check on every trip)
+# ===================================================================
+def get_own_trip(trip_id):
+    """Load a trip by id and make sure it belongs to the logged-in user.
+
+    1. db.get_or_404  -> the row exists, otherwise 404 Not Found.
+    2. owner check    -> it is YOURS, otherwise 403 Forbidden.
+    Without step 2, changing the id in the URL (/trips/7 -> /trips/8) would
+    show or change someone else's trip: an IDOR bug (Week 10).
+    """
+    trip = db.get_or_404(Trip, trip_id)
+    if trip.user_id != g.user.id:
+        abort(403)
+    return trip
+
+
+def get_own_item(trip, item_id):
+    """An itinerary item that belongs to THIS trip (else 404)."""
+    return db.first_or_404(db.select(TripItem).filter_by(id=item_id, trip_id=trip.id))
+
+
+def locate_destination(name):
+    """Coordinates of the trip destination (for weather and maps).
+
+    Returns (lat, lon), (None, None) if the API is down (the trip is still
+    saved, just without weather), or False if the city does not exist.
+    """
+    try:
+        city = api_client.find_city(name)
+    except api_client.ApiError:
+        return None, None
+    if city is None:
+        return False
+    return city["lat"], city["lon"]
+
+
+@app.route("/trips")
+@login_required
+def trips():
+    mine = Trip.query.filter_by(user_id=g.user.id)
+    today = date.today()
+    upcoming = mine.filter(Trip.end_date >= today).order_by(Trip.start_date).all()       # soonest first
+    past = mine.filter(Trip.end_date < today).order_by(Trip.start_date.desc()).all()     # most recent first
+    return render_template("trips.html", upcoming=upcoming, past=past)
+
+
+@app.route("/trips/new", methods=["GET", "POST"])
+@login_required
+def trip_new():
+    if request.method == "POST":
+        errors, data = validate_trip(request.form)
+        if not errors:
+            coords = locate_destination(data["destination"])
+            if coords is False:
+                errors["destination"] = f"We could not find a city called \"{data['destination']}\"."
+        if errors:
+            return render_template("trip_form.html", trip=None, errors=errors,
+                                   data=request.form), 400
+
+        trip = Trip(user_id=g.user.id, title=data["title"],
+                    destination=data["destination"],
+                    start_date=data["start_date"], end_date=data["end_date"],
+                    dest_lat=coords[0], dest_lon=coords[1])
+        db.session.add(trip)
+        db.session.commit()
+        flash(f"Trip \"{trip.title}\" created.")
+        # Came from a place page ("create a trip first")? Go back there.
+        if request.form.get("next"):
+            return redirect(safe_next("trips"))
+        return redirect(url_for("trip_detail", trip_id=trip.id))
+
+    # Pre-fill the destination when coming from a search (?destination=Rome)
+    data = {"destination": request.args.get("destination", "")[:80],
+            "next": request.args.get("next", "")}
+    return render_template("trip_form.html", trip=None, errors={}, data=data)
+
+
+@app.route("/trips/<int:trip_id>")
+@login_required
+def trip_detail(trip_id):
+    trip = get_own_trip(trip_id)
+    forecast = None
+    if trip.dest_lat is not None and trip.status != "past":
+        try:
+            forecast = api_client.get_forecast(trip.dest_lat, trip.dest_lon)
+        except api_client.ApiError:
+            forecast = None          # weather is optional
+    return render_template("trip.html", trip=trip, forecast=forecast)
+
+
+@app.route("/trips/<int:trip_id>/edit", methods=["GET", "POST"])
+@login_required
+def trip_edit(trip_id):
+    trip = get_own_trip(trip_id)
+    if request.method == "POST":
+        errors, data = validate_trip(request.form)
+        coords = (trip.dest_lat, trip.dest_lon)
+        if not errors and data["destination"].lower() != trip.destination.lower():
+            coords = locate_destination(data["destination"])   # new city
+            if coords is False:
+                errors["destination"] = f"We could not find a city called \"{data['destination']}\"."
+        if errors:
+            return render_template("trip_form.html", trip=trip, errors=errors,
+                                   data=request.form), 400
+
+        trip.title, trip.destination = data["title"], data["destination"]
+        trip.start_date, trip.end_date = data["start_date"], data["end_date"]
+        trip.dest_lat, trip.dest_lon = coords
+        # Places planned on a day that is no longer in the trip -> unscheduled
+        moved = 0
+        for item in trip.items:
+            if item.visit_date and not trip.start_date <= item.visit_date <= trip.end_date:
+                item.visit_date = None
+                moved += 1
+        db.session.commit()
+        flash("Trip updated." + (f" {moved} place(s) moved to \"Not scheduled yet\"." if moved else ""))
+        return redirect(url_for("trip_detail", trip_id=trip.id))
+
+    data = {"title": trip.title, "destination": trip.destination,
+            "start_date": trip.start_date.isoformat(), "end_date": trip.end_date.isoformat()}
+    return render_template("trip_form.html", trip=trip, errors={}, data=data)
+
+
+@app.route("/trips/<int:trip_id>/delete", methods=["POST"])
+@login_required
+def trip_delete(trip_id):
+    trip = get_own_trip(trip_id)
+    title = trip.title               # read it BEFORE deleting (the row is gone after commit)
+    db.session.delete(trip)          # cascade also deletes its items
+    db.session.commit()
+    flash(f"Trip \"{title}\" deleted.")
+    return redirect(url_for("trips"))
+
+
+# ---------- itinerary items ------------------------------------------
+@app.route("/trips/items/add", methods=["POST"])
+@login_required
+def trip_item_add():
+    """From a place page: add the place to one of MY trips."""
+    back = safe_next("trips")
+    trip_id = request.form.get("trip_id", "")
+    if not trip_id.isdecimal():
+        flash("Choose a trip.")
+        return redirect(back)
+    trip = get_own_trip(int(trip_id))          # someone else's trip id -> 403
+
+    errors, item = validate_trip_item(request.form, trip)
+    if errors:
+        flash("Could not add this place: " + " ".join(errors.values()))
+        return redirect(back)
+
+    last = max((i.sort_order for i in trip.items), default=-1)
+    try:
+        db.session.add(TripItem(trip_id=trip.id, sort_order=last + 1,
+                                place_xid=item["place_xid"], place_name=item["place_name"],
+                                place_lat=item["place_lat"], place_lon=item["place_lon"],
+                                visit_date=item["visit_date"], notes=item["notes"]))
+        db.session.commit()
+    except IntegrityError:
+        # UNIQUE (trip_id, place_xid): this place is already in that trip
+        db.session.rollback()
+        flash(f"\"{item['place_name']}\" is already in \"{trip.title}\".")
+        return redirect(back)
+
+    flash(f"Added \"{item['place_name']}\" to \"{trip.title}\".")
+    return redirect(back)
+
+
+@app.route("/trips/<int:trip_id>/items/<int:item_id>/update", methods=["POST"])
+@login_required
+def trip_item_update(trip_id, item_id):
+    trip = get_own_trip(trip_id)
+    item = get_own_item(trip, item_id)
+    errors, details = validate_item_details(request.form, trip)
+    if errors:
+        flash("Not saved: " + " ".join(errors.values()))
+    else:
+        item.visit_date, item.notes = details["visit_date"], details["notes"]
+        db.session.commit()
+        flash(f"Updated \"{item.place_name}\".")
+    return redirect(url_for("trip_detail", trip_id=trip.id) + f"#item-{item.id}")
+
+
+@app.route("/trips/<int:trip_id>/items/<int:item_id>/move", methods=["POST"])
+@login_required
+def trip_item_move(trip_id, item_id):
+    """Move a place up or down inside its day."""
+    trip = get_own_trip(trip_id)
+    item = get_own_item(trip, item_id)
+    direction = request.form.get("direction")
+    if direction not in ("up", "down"):
+        abort(400)
+
+    same_day = [i for i in trip.items if i.visit_date == item.visit_date]
+    for position, i in enumerate(same_day):     # renumber 0, 1, 2 ... first
+        i.sort_order = position
+    index = same_day.index(item)
+    other = index - 1 if direction == "up" else index + 1
+    if 0 <= other < len(same_day):              # swap with the neighbour
+        same_day[index].sort_order, same_day[other].sort_order = other, index
+    db.session.commit()
+    return redirect(url_for("trip_detail", trip_id=trip.id) + f"#item-{item.id}")
+
+
+@app.route("/trips/<int:trip_id>/items/<int:item_id>/delete", methods=["POST"])
+@login_required
+def trip_item_delete(trip_id, item_id):
+    trip = get_own_trip(trip_id)
+    item = get_own_item(trip, item_id)
+    name = item.place_name           # read it BEFORE deleting
+    db.session.delete(item)
+    db.session.commit()
+    flash(f"Removed \"{name}\" from this trip.")
+    return redirect(url_for("trip_detail", trip_id=trip.id))
 
 
 if __name__ == "__main__":
