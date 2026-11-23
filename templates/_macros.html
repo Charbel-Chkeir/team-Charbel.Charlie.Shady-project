@@ -1,0 +1,29 @@
+{#
+  Reusable Jinja macros. Use in a template with:
+      {% from "_macros.html" import place_image %}
+      {{ place_image(url, "Alt text", "card") }}   -> kind "card" (small) or "hero" (big)
+#}
+
+{#
+  place_image: a place photo with a built-in fallback.
+  - No URL at all (OpenTripMap has no photo)  -> the box starts as "is-missing".
+  - URL exists but fails to load (dead link)  -> onerror adds "is-missing".
+  CSS (.photo.is-missing) then hides the <img> and shows "Image unavailable".
+#}
+{% macro place_image(url, alt, kind="card") %}
+<div class="photo photo-{{ kind }}{% if not url %} is-missing{% endif %}">
+  {% if url %}
+    <img src="{{ url }}" alt="{{ alt }}" loading="lazy"
+         onerror="this.parentElement.classList.add('is-missing')">
+  {% endif %}
+  <div class="photo-missing">
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 7h3l2-3h6l2 3h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/>
+      <circle cx="12" cy="13" r="3.5"/>
+      <line x1="3" y1="3" x2="21" y2="21"/>
+    </svg>
+    <span>Image unavailable</span>
+  </div>
+</div>
+{% endmacro %}
