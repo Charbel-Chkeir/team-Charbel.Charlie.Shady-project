@@ -7,14 +7,18 @@ email + password with Flask sessions.
 
 Run locally:   flask run --debug    ->   http://127.0.0.1:5000
 """
+import logging
 import os
 from datetime import date, timedelta
 from functools import wraps
 
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, abort, g)
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect, CSRFError
 from sqlalchemy.exc import IntegrityError
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from models import db, User, Favorite, Trip, TripItem
@@ -67,6 +71,52 @@ with app.app_context():
 
 # CSRF protection: every POST must carry a valid csrf_token (see templates).
 csrf = CSRFProtect(app)
+
+# ---------- running behind Render's proxy ----------------------------
+# On Render, requests reach Flask through a proxy. ProxyFix reads the
+# X-Forwarded-For / X-Forwarded-Proto headers it adds, so request.remote_addr
+# is the VISITOR's IP (needed by the rate limiter) and request.scheme is https.
+if ON_RENDER:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+
+# ---------- security logging (A09) -----------------------------------
+# Shown in Render's "Logs" tab. Never log passwords, tokens or API keys.
+app.logger.setLevel(logging.INFO)
+
+# ---------- rate limiting (A07 brute force, A06 limit resources) ------
+# Counts requests per visitor IP. "memory://" = counters kept in this
+# process (enough for one small Render instance; resets on restart).
+limiter = Limiter(get_remote_address, app=app, storage_uri="memory://")
+
+# A real hash of a random password: used when the email does not exist, so
+# a failed login takes the same time either way (no account enumeration by timing).
+DUMMY_HASH = generate_password_hash(os.urandom(16).hex())
+
+
+# ---------- security headers on every response (A02 / A05) -----------
+CSP = "; ".join([
+    "default-src 'self'",
+    "script-src 'self'",          # only our own .js files: no inline or foreign scripts (XSS backstop)
+    "style-src 'self'",
+    "img-src 'self' data: https:",  # photos (Wikimedia) + map tiles (OpenStreetMap); images cannot run code
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",         # forms can only be sent to our own site
+    "frame-ancestors 'none'",     # nobody can put our pages in an <iframe> (clickjacking)
+])
+
+
+@app.after_request
+def security_headers(response):
+    response.headers["Content-Security-Policy"] = CSP
+    response.headers["X-Content-Type-Options"] = "nosniff"      # no guessing of file types
+    response.headers["X-Frame-Options"] = "DENY"                # old browsers' frame-ancestors
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if ON_RENDER:   # HTTPS only: "always use HTTPS for this site" (A04)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 
 # ---------- current user & helpers ---------------------------------
@@ -137,6 +187,8 @@ def safe_next(default_endpoint):
 @app.errorhandler(CSRFError)
 def handle_csrf_error(e):
     """Missing/expired CSRF token: show a friendly message instead of a raw 400."""
+    app.logger.warning("CSRF check failed: %s %s from %s", request.method, request.path,
+                       request.remote_addr)
     flash("Your form expired. Please try again.")
     return redirect(request.referrer or url_for("home"))
 
@@ -161,6 +213,7 @@ def home():
 
 
 @app.route("/search")
+@limiter.limit("30 per minute")         # each search calls 2-3 external APIs
 def search():
     """/search?city=Rome&kind=historic&page=2"""
     errors, form = validate_search(request.args, api_client.CATEGORIES)
@@ -192,6 +245,7 @@ def search():
 
 
 @app.route("/place/<xid>")
+@limiter.limit("60 per minute")
 def place(xid):
     if not is_valid_xid(xid):
         abort(404)
@@ -207,6 +261,7 @@ def place(xid):
 
 
 @app.route("/weather")
+@limiter.limit("60 per minute")
 def weather():
     """/weather?lat=33.89&lon=35.50&name=Beirut"""
     errors, form = validate_coords(request.args)
@@ -230,6 +285,8 @@ def not_found(e):
 
 @app.errorhandler(403)
 def forbidden(e):
+    app.logger.warning("403 access denied: user %s tried %s %s", g.user.id if g.user else None,
+                       request.method, request.path)
     return render_template("error.html", code=403, title="Not allowed",
                            message="This page belongs to another account."), 403
 
@@ -240,9 +297,19 @@ def bad_request(e):
                            message="The request was not valid."), 400
 
 
+@app.errorhandler(429)
+def too_many_requests(e):
+    app.logger.warning("Rate limit hit: %s %s from %s (%s)", request.method, request.path,
+                       request.remote_addr, e.description)
+    return render_template("error.html", code=429, title="Too many requests",
+                           message="You tried too many times. Please wait a minute and try again."), 429
+
+
 @app.errorhandler(500)
 def server_error(e):
     db.session.rollback()       # a failed DB operation must not break the next request
+    app.logger.error("500 on %s %s: %s", request.method, request.path,
+                     getattr(e, "original_exception", e))
     return render_template("error.html", code=500, title="Something went wrong",
                            message="An unexpected error happened. Please try again."), 500
 
@@ -251,6 +318,7 @@ def server_error(e):
 # AUTHENTICATION  (sign-up, log-in, log-out, sessions)
 # ===================================================================
 @app.route("/signup", methods=["GET", "POST"])
+@limiter.limit("10 per hour", methods=["POST"])      # account-creation spam
 def signup():
     if g.user:                                   # already logged in
         return redirect(url_for("home"))
@@ -283,6 +351,7 @@ def signup():
         session.clear()                          # start a fresh session
         session["user_id"] = user.id
         session.permanent = True                 # use PERMANENT_SESSION_LIFETIME
+        app.logger.info("New account %s from %s", user.id, request.remote_addr)
         flash("Welcome to WanderWise! Your account was created.")
         return redirect(url_for("home"))
 
@@ -290,6 +359,7 @@ def signup():
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])     # brute force: 6th try in a minute -> 429
 def login():
     if g.user:
         return redirect(url_for("home"))
@@ -301,10 +371,13 @@ def login():
                                    data={"email": email}), 400
 
         user = User.query.filter_by(email=email).first()
-        # Same message whether the email is unknown or the password is wrong,
-        # so an attacker cannot learn which emails have accounts.
-        if user is None or not check_password_hash(user.password_hash,
-                                                   request.form["password"]):
+        # Always run ONE password check, even for an unknown email (against
+        # DUMMY_HASH), so both cases take the same time. Same message for
+        # both, so an attacker cannot learn which emails have accounts.
+        password_ok = check_password_hash(user.password_hash if user else DUMMY_HASH,
+                                          request.form["password"])
+        if user is None or not password_ok:
+            app.logger.warning("Failed login for %s from %s", email, request.remote_addr)
             return render_template(
                 "login.html", data={"email": email},
                 errors={"form": "Email or password is incorrect."}), 401
@@ -312,6 +385,7 @@ def login():
         session.clear()                          # prevents session fixation
         session["user_id"] = user.id
         session.permanent = True
+        app.logger.info("Login: user %s from %s", user.id, request.remote_addr)
         flash("Logged in successfully.")
         return redirect(safe_next("home"))
 
@@ -600,4 +674,7 @@ def trip_item_delete(trip_id, item_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Debug ONLY when asked for (FLASK_DEBUG=1), never hard-coded (A02):
+    # the debugger lets anyone who sees an error page run Python code.
+    # Render starts the app with gunicorn and never runs this block.
+    app.run(host="127.0.0.1", port=5000, debug=os.environ.get("FLASK_DEBUG") == "1")
