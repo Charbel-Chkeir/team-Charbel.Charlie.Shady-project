@@ -16,11 +16,12 @@ os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["OPENTRIPMAP_API_KEY"] = "test-key"
 
 import api_client                                   # noqa: E402
-from app import app                                 # noqa: E402
+from app import app, limiter                        # noqa: E402
 from models import db, Trip, TripItem               # noqa: E402
 from tests.test_routes import fake_api              # noqa: E402
 
 logging.disable(logging.CRITICAL)
+limiter.enabled = False   # many users from one test IP; limits are tested in test_security.py
 
 START = date.today() + timedelta(days=10)
 END = START + timedelta(days=3)                      # a 4-day trip

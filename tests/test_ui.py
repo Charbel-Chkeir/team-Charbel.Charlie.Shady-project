@@ -17,11 +17,12 @@ os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["OPENTRIPMAP_API_KEY"] = "test-key"
 
 import api_client                                   # noqa: E402
-from app import app                                 # noqa: E402
+from app import app, limiter                        # noqa: E402
 from tests.test_api_client import DETAIL, fake_response          # noqa: E402
 from tests.test_routes import fake_api              # noqa: E402
 
 logging.disable(logging.CRITICAL)
+limiter.enabled = False   # many users from one test IP; limits are tested in test_security.py
 TEMPLATES = pathlib.Path(__file__).resolve().parent.parent / "templates"
 
 
