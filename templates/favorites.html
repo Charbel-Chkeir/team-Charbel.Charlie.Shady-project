@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import place_image %}
 {% block title %}My Favorites{% endblock %}
 {% block content %}
 <h1>My Favorites</h1>
@@ -7,7 +8,7 @@
     {% for f in favorites %}
       <div class="card">
         <a href="{{ url_for('item', item_id=f.place_xid) }}">
-          {% if f.place_image %}<img src="{{ f.place_image }}" alt="{{ f.place_name }}">{% endif %}<span>{{ f.place_name }}</span>
+          {{ place_image(f.place_image, f.place_name) }}<span>{{ f.place_name }}</span>
         </a>
         <form method="post" action="{{ url_for('favorites_remove') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

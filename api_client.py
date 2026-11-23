@@ -173,14 +173,21 @@ WIKIMEDIA_WIDTHS = (20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920, 3840)
 _THUMB_WIDTH = re.compile(r"(/thumb/.+/)(\d+)px-([^/]+)$")
 
 
-def _image_url(url, width=500):
-    """Secure image URL; Wikimedia thumbnails rewritten to a standard width.
+def _image_url(url):
+    """Secure image URL; Wikimedia thumbnail widths rounded DOWN to a standard one.
 
-    .../thumb/9/9c/File.jpg/400px-File.jpg -> .../thumb/9/9c/File.jpg/500px-File.jpg
+    .../400px-File.jpg -> .../330px-File.jpg   (330 is the largest standard <= 400)
+    .../283px-File.jpg -> .../250px-File.jpg
+    Rounding DOWN matters: Wikimedia refuses to make a thumbnail WIDER than the
+    original photo, and OpenTripMap's width is never wider than the original.
     """
     url = _https_or_none(url)
     if url and "upload.wikimedia.org" in url:
-        url = _THUMB_WIDTH.sub(lambda m: f"{m.group(1)}{width}px-{m.group(3)}", url)
+        def standard(m):
+            width = int(m.group(2))
+            ok = [w for w in WIKIMEDIA_WIDTHS if w <= width] or [WIKIMEDIA_WIDTHS[0]]
+            return f"{m.group(1)}{ok[-1]}px-{m.group(3)}"
+        url = _THUMB_WIDTH.sub(standard, url)
     return url
 
 

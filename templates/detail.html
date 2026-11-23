@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% from "_macros.html" import place_image %}
 {% block title %}{{ item.title }}{% endblock %}
 {% block content %}
 <article class="detail">
   <h1>{{ item.title }}</h1>
-  {% if item.image %}<img class="hero" src="{{ item.image }}" alt="{{ item.title }}" onerror="this.remove()">{% endif %}
+  {{ place_image(item.image, item.title, "hero") }}
 
   {% if current_user %}
     {% if item.id in favorite_ids %}

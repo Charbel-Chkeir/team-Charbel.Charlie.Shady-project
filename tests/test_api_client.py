@@ -176,8 +176,8 @@ class ApiClientTests(unittest.TestCase):
         p = api_client.get_place("W2")
         self.assertEqual(p["address"], "Damascus Street, Beirut, Lebanon")
         self.assertEqual(p["description"], "The main museum.")
-        # 400px is not a Wikimedia standard width -> rewritten to 500px
-        self.assertEqual(p["image"], "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Museum.jpg/500px-Museum.jpg")
+        # 400px is not a Wikimedia standard width -> rounded DOWN to 330px
+        self.assertEqual(p["image"], "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Museum.jpg/330px-Museum.jpg")
         self.assertEqual((p["lat"], p["lon"]), (33.87, 35.51))
 
     @mock.patch("api_client.requests.get")
@@ -200,6 +200,17 @@ class ApiClientTests(unittest.TestCase):
         for bad in ["../geoname", "N1?x=1", "", "a" * 51]:
             self.assertIsNone(api_client.get_place(bad))
         get.assert_not_called()
+
+    def test_wikimedia_widths(self):
+        base = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/X.jpg/"
+        for given, expected in [(400, 330), (283, 250), (500, 500), (120, 120), (90, 60), (5, 20)]:
+            self.assertEqual(api_client._image_url(f"{base}{given}px-X.jpg"),
+                             f"{base}{expected}px-X.jpg")
+        # not a thumbnail / not Wikimedia -> unchanged
+        self.assertEqual(api_client._image_url("https://upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg"),
+                         "https://upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg")
+        self.assertEqual(api_client._image_url("https://example.com/400px-X.jpg"),
+                         "https://example.com/400px-X.jpg")
 
     # ---------- get_forecast ----------
     @mock.patch("api_client.requests.get")
