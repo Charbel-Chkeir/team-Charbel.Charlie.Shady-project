@@ -3,43 +3,56 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- CSRF token for JavaScript fetch() POSTs later (sent as X-CSRFToken) -->
+  <!-- CSRF token for JavaScript fetch() POSTs (sent as X-CSRFToken) -->
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}WanderWise{% endblock %} · WanderWise</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block head %}{% endblock %}
+  <!-- defer: download now, run after the HTML is parsed (Week 5) -->
+  <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
 </head>
 <body>
+  <div class="loading-bar" aria-hidden="true"></div>
+  <a class="skip-link" href="#main">Skip to content</a>
+
   <header class="nav">
-    <a class="brand" href="{{ url_for('home') }}">WanderWise</a>
-    <nav>
-      <a href="{{ url_for('home') }}">Home</a>
+    <a class="brand" href="{{ url_for('home') }}"><span aria-hidden="true">🧭</span> WanderWise</a>
+    <!-- Only shown on small screens (CSS); app.js opens/closes the menu -->
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="main-nav">☰ Menu</button>
+    <nav id="main-nav" aria-label="Main">
+      <a href="{{ url_for('home') }}" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}>Explore</a>
       {% if current_user %}
-        <a href="{{ url_for('trips') }}">My Trips</a>
-        <a href="{{ url_for('favorites') }}">My Favorites</a>
-        <span class="who">{{ current_user.email }}</span>
+        <a href="{{ url_for('trips') }}" {% if request.endpoint and request.endpoint.startswith('trip') %}aria-current="page"{% endif %}>My Trips</a>
+        <a href="{{ url_for('favorites') }}" {% if request.endpoint == 'favorites' %}aria-current="page"{% endif %}>Favorites</a>
+        <span class="who" title="Logged in as">{{ current_user.email }}</span>
         <!-- Logout changes state, so it is a POST form with a CSRF token, not a link -->
         <form class="logout" method="post" action="{{ url_for('logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="link-btn">Log out</button>
         </form>
       {% else %}
-        <a href="{{ url_for('login') }}">Log in</a>
-        <a href="{{ url_for('signup') }}">Sign up</a>
+        <a href="{{ url_for('login') }}" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}>Log in</a>
+        <a class="nav-cta" href="{{ url_for('signup') }}">Sign up</a>
       {% endif %}
     </nav>
   </header>
-  <main class="container">
+
+  <main class="container" id="main">
     {% with messages = get_flashed_messages() %}
       {% if messages %}<div class="flash" role="status">{% for m in messages %}<p>{{ m }}</p>{% endfor %}</div>{% endif %}
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+
   <!-- Attribution required by the data licences (OpenTripMap / OSM: ODbL) -->
   <footer class="site-footer">
     Places data © <a href="https://opentripmap.io" target="_blank" rel="noopener noreferrer">OpenTripMap</a>,
     <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>
     (ODbL) and Wikipedia · Weather by
     <a href="https://open-meteo.com" target="_blank" rel="noopener noreferrer">Open-Meteo</a>
+    · Map <a href="https://leafletjs.com" target="_blank" rel="noopener noreferrer">Leaflet</a>
   </footer>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

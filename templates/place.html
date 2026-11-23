@@ -1,6 +1,7 @@
 {% extends "base.html" %}
-{% from "_macros.html" import place_image %}
+{% from "_macros.html" import place_image, map_box, leaflet_head, leaflet_scripts %}
 {% block title %}{{ place.name }}{% endblock %}
+{% block head %}{{ leaflet_head() }}{% endblock %}
 {% block content %}
 <article class="place">
   <a class="hint" href="{{ back_url() }}">← Back</a>
@@ -88,11 +89,20 @@
     </div>
   </div>
 
-  <h2>About</h2>
-  {% if place.description %}
-    <p class="description" dir="auto">{{ place.description }}</p>
-  {% else %}
-    <p class="hint">No description is available for this place.</p>
-  {% endif %}
+  <div class="about-layout">
+    <section>
+      <h2>About</h2>
+      {% if place.description %}
+        <p class="description" dir="auto">{{ place.description }}</p>
+      {% else %}
+        <p class="hint">No description is available for this place.</p>
+      {% endif %}
+    </section>
+    <section>
+      <h2>Location</h2>
+      {{ map_box(map_data, "Map showing " ~ place.name) }}
+    </section>
+  </div>
 </article>
 {% endblock %}
+{% block scripts %}{{ leaflet_scripts() }}{% endblock %}

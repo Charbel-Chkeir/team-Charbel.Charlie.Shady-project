@@ -1,6 +1,7 @@
 {% extends "base.html" %}
-{% from "_macros.html" import weather_days %}
+{% from "_macros.html" import weather_days, map_box, leaflet_head, leaflet_scripts %}
 {% block title %}{{ trip.title }}{% endblock %}
+{% block head %}{{ leaflet_head() }}{% endblock %}
 {% block content %}
 <a class="hint" href="{{ url_for('trips') }}">← My trips</a>
 
@@ -13,9 +14,9 @@
   <div class="trip-actions">
     <a class="btn" href="{{ url_for('search', city=trip.destination) }}">+ Find places in {{ trip.destination }}</a>
     <a class="btn secondary" href="{{ url_for('trip_edit', trip_id=trip.id) }}">Edit</a>
-    <!-- Delete changes data -> POST + CSRF token; confirm() asks before sending -->
+    <!-- Delete changes data -> POST + CSRF token; app.js asks data-confirm first -->
     <form method="post" action="{{ url_for('trip_delete', trip_id=trip.id) }}"
-          onsubmit="return confirm('Delete this trip and all its planned places?');">
+          data-confirm="Delete this trip and all its planned places?">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn remove">Delete</button>
     </form>
@@ -29,8 +30,10 @@
   </section>
 {% endif %}
 
-<h2>Itinerary</h2>
 {% set days = trip.itinerary() %}
+<div class="trip-layout">
+<div class="trip-plan">
+<h2>Itinerary</h2>
 {% if days %}
   {% for day, items in days %}
     <section class="day">
@@ -39,6 +42,8 @@
         {% for item in items %}
           <li class="stop" id="item-{{ item.id }}">
             <div class="stop-main">
+              <!-- same number as the marker on the map (computed in app.py) -->
+              <span class="num" aria-hidden="true">{{ numbers[item.id] }}</span>
               <a class="stop-name" href="{{ url_for('place', xid=item.place_xid) }}">{{ item.place_name }}</a>
               {% if item.notes %}<p class="stop-notes" dir="auto">{{ item.notes }}</p>{% endif %}
             </div>
@@ -57,7 +62,8 @@
                   <button class="icon-btn" name="direction" value="down" title="Move down" aria-label="Move down">↓</button>
                 </form>
               {% endif %}
-              <form method="post" action="{{ url_for('trip_item_delete', trip_id=trip.id, item_id=item.id) }}">
+              <form method="post" action="{{ url_for('trip_item_delete', trip_id=trip.id, item_id=item.id) }}"
+                    data-confirm="Remove {{ item.place_name }} from this trip?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="icon-btn danger" title="Remove from trip" aria-label="Remove {{ item.place_name }} from trip">✕</button>
               </form>
@@ -90,4 +96,15 @@
        open an attraction and press "Add to trip".</p>
   </div>
 {% endif %}
+</div>
+
+{% if map_data.markers %}
+  <aside class="trip-map">
+    <h2>Map</h2>
+    {{ map_box(map_data, "Map of the planned places", "sticky tall") }}
+    <p class="hint">Numbers follow the itinerary order.</p>
+  </aside>
+{% endif %}
+</div>
 {% endblock %}
+{% block scripts %}{{ leaflet_scripts() }}{% endblock %}
