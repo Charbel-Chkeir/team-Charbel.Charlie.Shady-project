@@ -4,7 +4,10 @@
 {% block content %}
 <header class="results-head">
   <h1>Things to do in {{ city.name }}{% if city.country %} <small>({{ city.country }})</small>{% endif %}</h1>
-  <a class="hint" href="{{ url_for('home') }}">← New search</a>
+  <span>
+    {% if current_user %}<a class="btn" href="{{ url_for('trip_new', destination=city.name) }}">+ Plan a trip to {{ city.name }}</a>{% endif %}
+    <a class="hint" href="{{ url_for('home') }}">← New search</a>
+  </span>
 </header>
 
 <!-- Weather: optional. If Open-Meteo failed, forecast is None -->

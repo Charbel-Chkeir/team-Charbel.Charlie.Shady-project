@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}My Trips{% endblock %}
+
+{% macro trip_cards(trips) %}
+  <div class="cards trip-cards">
+    {% for t in trips %}
+      <a class="card trip-card status-{{ t.status }}" href="{{ url_for('trip_detail', trip_id=t.id) }}">
+        <span class="badge">{{ t.status | capitalize }}</span>
+        <span class="tc-title">{{ t.title }}</span>
+        <span class="tc-dest">📍 {{ t.destination }}</span>
+        <span class="tc-dates">🗓️ {{ t.start_date.strftime("%d %b") }} – {{ t.end_date.strftime("%d %b %Y") }}
+          · {{ t.days }} day{{ "s" if t.days > 1 }}</span>
+        <span class="tc-count">{{ t.items | length }} place{{ "s" if t.items | length != 1 }} planned</span>
+      </a>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{% block content %}
+<header class="results-head">
+  <h1>My Trips</h1>
+  <a class="btn" href="{{ url_for('trip_new') }}">+ New trip</a>
+</header>
+
+{% if upcoming or past %}
+  {% if upcoming %}
+    <section class="trips-section">
+      <h2>Upcoming &amp; ongoing</h2>
+      {{ trip_cards(upcoming) }}
+    </section>
+  {% endif %}
+  {% if past %}
+    <section class="trips-section">
+      <h2>Past trips</h2>
+      {{ trip_cards(past) }}
+    </section>
+  {% endif %}
+{% else %}
+  <div class="empty">
+    <p><strong>No trips yet.</strong></p>
+    <p>Create a trip, then add places to it from any attraction page.</p>
+    <p><a class="btn" href="{{ url_for('trip_new') }}">Plan my first trip</a></p>
+  </div>
+{% endif %}
+{% endblock %}
